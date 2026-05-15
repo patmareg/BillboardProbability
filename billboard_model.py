@@ -78,11 +78,13 @@ def load_data(csv_path: str, sep: str = ",", n_weeks: int = None) -> list[dict]:
           se publica ese chart (0 = semana de debut).
     """
     df = pd.read_csv(
-        csv_path,
-        sep=sep,
-        names=["fecha_chart", "fecha_debut", "titulo", "artista", "x2", "x1", "ranking"],
-        parse_dates=["fecha_chart", "fecha_debut"],
+    csv_path,
+    sep=sep,
+    header=0,  # la primera fila es el encabezado
+    names=["fecha_chart", "fecha_debut", "titulo", "artista", "x2", "x1", "ranking"],
     )
+    df["fecha_chart"] = pd.to_datetime(df["fecha_chart"], format="ISO8601")
+    df["fecha_debut"] = pd.to_datetime(df["fecha_debut"], format="ISO8601")
 
     # Billboard usa semanas; calculamos tau en semanas enteras
     df["tau"] = ((df["fecha_chart"] - df["fecha_debut"]).dt.days / 7).round().astype(int)
@@ -116,6 +118,7 @@ def load_data(csv_path: str, sep: str = ",", n_weeks: int = None) -> list[dict]:
 
     print(f"  Semanas cargadas: {len(charts_raw)}")
     print(f"  Rango temporal:   {charts_raw[0]['fecha'].date()} → {charts_raw[-1]['fecha'].date()}")
+    charts_raw = charts_raw[8:]  # descartar las primeras 8 semanas (~2 meses)
     return charts_raw
 
 
@@ -212,12 +215,12 @@ def neg_ll(params: np.ndarray, charts: list[dict]) -> float:
 # Límites de búsqueda para cada parámetro:
 #   (A, p0, t0, mu, beta1, beta2)
 BOUNDS = [
-    (1e-3, 10.0),     # A       – amplitud del buzz
-    (1e-4, 0.9999),   # p0      – probabilidad inicial logística
+    (0.1, 100.0),     # A       – amplitud del buzz
+    (1e-4, 1),   # p0      – probabilidad inicial logística
     (0.5,  52.0),     # t0      – semivida logística (semanas)
-    (0.1,  20.0),     # mu      – base de tau_c
-    (-5.0,  5.0),     # beta1   – efecto de hits previos
-    (-5.0,  5.0),     # beta2   – efecto de colaboración
+    (0.1,  100.0),     # mu      – base de tau_c
+    (-2.0,  2.0),     # beta1   – efecto de hits previos
+    (-2.0,  2.0),     # beta2   – efecto de colaboración
 ]
 
 PARAM_NAMES = ["A", "p0", "t0", "mu", "beta1", "beta2"]
@@ -453,6 +456,21 @@ def main():
     # 1. Cargar datos
     print("\n→ Cargando datos…")
     charts = load_data(args.csv, sep=args.sep, n_weeks=args.n_weeks)
+
+    # 1.5. Buscar errores
+    taus = [s["tau"] for chart in charts for s in chart["songs"]]
+    print(f"tau: min={min(taus)}, max={max(taus)}, media={np.mean(taus):.1f}, mediana={np.median(taus):.1f}")
+
+    x1s = [s["x1"] for chart in charts for s in chart["songs"]]
+    x2s = [s["x2"] for chart in charts for s in chart["songs"]]
+    print(f"x1: min={min(x1s)}, max={max(x1s)}, media={np.mean(x1s):.1f}")
+    print(f"x2: proporción colaboraciones={np.mean(x2s):.2f}")
+    # Distribución de taus
+    import matplotlib.pyplot as plt
+    plt.hist(taus, bins=50)
+    plt.xlabel("tau (semanas en lista)")
+    plt.title("Distribución de tau")
+    plt.savefig("diagnostico_tau.png")
 
     # 2. Optimizar
     print("\n→ Optimizando parámetros…")
