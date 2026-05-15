@@ -133,6 +133,12 @@ def S(tau_arr: np.ndarray, A: float, p0: float, t0: float) -> np.ndarray:
     """
     return A / (1.0 + (1.0 / p0 - 1.0) * np.exp(-tau_arr / t0))
 
+def dS(tau_arr: np.ndarray, A: float, p0: float, t0: float) -> np.ndarray:
+    """
+    La derivada de S
+    """
+    return (-A / (1.0 + (1.0 / p0 - 1.0) * np.exp(-tau_arr / t0))**2)*(-1/p0 + 1)/t0* np.exp(-tau_arr / t0)
+
 
 def compute_V(tau_max: int, x1: float, x2: float,
               A: float, p0: float, t0: float,
@@ -147,7 +153,7 @@ def compute_V(tau_max: int, x1: float, x2: float,
         return -np.inf                  # configuración inválida
 
     taus = np.arange(0, tau_max + 1, dtype=float)
-    s_vals = S(taus, A, p0, t0)
+    s_vals = dS(taus, A, p0, t0)
     decay  = np.exp(-taus / tau_c)
     weight = 1.0 / (taus + 1.0)
 
