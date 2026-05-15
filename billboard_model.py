@@ -140,15 +140,15 @@ def dS(tau_arr: np.ndarray, A: float, p0: float, t0: float) -> np.ndarray:
     return (-A / (1.0 + (1.0 / p0 - 1.0) * np.exp(-tau_arr / t0))**2)*(-1/p0 + 1)/t0* np.exp(-tau_arr / t0)
 
 
-def compute_V(tau_max: int, x1: float, x2: float,
+def compute_V(tau_max: int, x1: float, x2: float,x3:float, 
               A: float, p0: float, t0: float,
-              mu: float, beta1: float, beta2: float) -> float:
+              mu: float, beta1: float, beta2: float, beta3: float) -> float:
     """
     V_i(t) = sum_{tau=0}^{tau_max}  S(tau) * (tau+1)^{-1} * exp(-tau / tau_c)
 
     tau_c = mu + beta1*x1 + beta2*x2  (debe ser > 0 para que tenga sentido físico)
     """
-    tau_c = mu + beta1 * x1 + beta2 * x2
+    tau_c = mu + beta1 * x1 + beta2 * x2 + beta3 * x3
     if tau_c <= 0:
         return -np.inf                  # configuración inválida
 
@@ -227,9 +227,11 @@ BOUNDS = [
     (0.1,  100.0),     # mu      – base de tau_c
     (-2.0,  2.0),     # beta1   – efecto de hits previos
     (-2.0,  2.0),     # beta2   – efecto de colaboración
+    (-2.0,  2.0),     # beta1   – efecto de hits previos
+    (-2.0,  2.0),     # beta2   – efecto de colaboración
 ]
 
-PARAM_NAMES = ["A", "p0", "t0", "mu", "beta1", "beta2"]
+PARAM_NAMES = ["A", "p0", "t0", "mu", "beta1", "beta2", "beta3"]
 
 
 def optimize(charts: list[dict], n_starts: int = 20, seed: int = 42) -> dict:
