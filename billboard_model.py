@@ -90,6 +90,7 @@ def load_data(csv_path: str, sep: str = ",", n_weeks: int = None) -> list[dict]:
     df["tau"] = ((df["fecha_chart"] - df["fecha_debut"]).dt.days / 7).round().astype(int)
     df["tau"] = df["tau"].clip(lower=0)  # seguridad: nunca negativo
 
+    df["tau"].to_csv('taus.csv', sep=',')
     # Ordenamos y agrupamos por semana de chart
     df = df.sort_values(["fecha_chart", "ranking"])
 
@@ -153,10 +154,9 @@ def compute_V(tau_max: int, x1: float, x2: float,x3:float,
         return -np.inf                  # configuración inválida
 
     taus = np.arange(0, tau_max + 1, dtype=float)
-    s_vals = dS(taus, A, p0, t0)
+    s_vals = S(tau_max - taus, A, p0, t0)   # S(t-τ): decrece con τ
     decay  = np.exp(-taus / tau_c)
     weight = 1.0 / (taus + 1.0)
-
     return float(np.sum(s_vals * weight * decay))
 
 
@@ -191,6 +191,34 @@ def log_likelihood_chart(songs: list[dict],
 
     return ll
 
+# def log_likelihood_chart(songs, A, p0, t0, mu, beta1, beta2):
+    
+#     # Masa extra por canciones no observadas (Bradlow-Fader: n1=n2=50)
+#     # Su valor esperado se aproxima con la media de los V observados
+
+#     N = len(songs)
+#     # Calcula V para cada canción
+#     Vs = np.array([
+#         compute_V(s["tau"], s["x1"], s["x2"], A, p0, t0, mu, beta1, beta2)
+#         for s in songs
+#     ])
+
+#     if np.any(~np.isfinite(Vs)):
+#         return -np.inf
+#     n_unobserved = 50  # n1 + n2 de B&F
+#     mean_V = Vs.mean()
+#     extra_mass = n_unobserved * np.exp(mean_V)
+    
+#     ll = 0.0
+#     for k in range(N - 1):
+#         remaining = Vs[k:]
+#         max_v = remaining.max()
+#         log_denom = max_v + np.log(
+#             np.sum(np.exp(remaining - max_v)) + extra_mass * np.exp(-max_v)
+#         )
+#         ll += Vs[k] - log_denom
+#     return ll
+
 
 def total_log_likelihood(params: np.ndarray, charts: list[dict]) -> float:
     """Suma de log-verosimilitudes sobre todos los charts."""
@@ -221,7 +249,7 @@ def neg_ll(params: np.ndarray, charts: list[dict]) -> float:
 # Límites de búsqueda para cada parámetro:
 #   (A, p0, t0, mu, beta1, beta2)
 BOUNDS = [
-    (0.1, 100.0),     # A       – amplitud del buzz
+    (0.1, 50.0),     # A       – amplitud del buzz
     (1e-4, 1),   # p0      – probabilidad inicial logística
     (0.5,  52.0),     # t0      – semivida logística (semanas)
     (0.1,  100.0),     # mu      – base de tau_c
@@ -450,7 +478,7 @@ def plot_pred_vs_real(df_pred: pd.DataFrame, out_prefix: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Calibración modelo Billboard Hot 100")
-    parser.add_argument("--csv",      required=True,          help="Ruta al CSV de datos")
+    parser.add_argument("--csv",      default="billboard_analisis6.csv",          help="Ruta al CSV de datos")
     parser.add_argument("--sep",      default=",",            help="Separador del CSV (default: ,)")
     parser.add_argument("--n_weeks",  type=int, default=None, help="Número de semanas a usar (default: todas)")
     parser.add_argument("--out",      default="output",       help="Prefijo de archivos de salida")
@@ -480,6 +508,37 @@ def main():
     plt.title("Distribución de tau")
     plt.savefig("diagnostico_tau.png")
 
+
+    # Inspecciona V para una canción concreta con parámetros razonables
+    cancion_test = charts[10]["songs"][0]  # primera canción del chart 11
+    print(cancion_test)
+
+    A, p0, t0, mu = 1.0, 0.1, 10.0, 5.0
+
+    taus = np.arange(0, cancion_test["tau"] + 1, dtype=float)
+
+    # Versión ACTUAL (corregida): S(t - tau)
+    s_nuevo = A / (1 + (1/p0 - 1) * np.exp(-(cancion_test["tau"] - taus) / t0))
+
+    # Versión ANTERIOR (bug): S(tau)
+    s_viejo = A / (1 + (1/p0 - 1) * np.exp(-taus / t0))
+
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    axes[0].plot(taus, s_nuevo, label="S(t-τ) — correcto")
+    axes[0].plot(taus, s_viejo, label="S(τ) — bug", linestyle="--")
+    axes[0].set_title("Comparación S evaluado en τ vs t-τ")
+    axes[0].legend()
+
+    decay = np.exp(-taus / mu)
+    weight = 1.0 / (taus + 1.0)
+    V_nuevo = np.cumsum(s_nuevo * weight * decay)
+    V_viejo = np.cumsum(s_viejo * weight * decay)
+    axes[1].plot(taus, V_nuevo, label="V con S(t-τ)")
+    axes[1].plot(taus, V_viejo, label="V con S(τ)", linestyle="--")
+    axes[1].set_title("V acumulado resultante")
+    axes[1].legend()
+    plt.savefig("diagnostico_V.png")
     # 2. Optimizar
     print("\n→ Optimizando parámetros…")
     result = optimize(charts, n_starts=args.n_starts)
