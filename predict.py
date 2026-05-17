@@ -1,5 +1,6 @@
 """
 Predicciones para la semana siguiente usando error Gumbel
+Modelo: ω = V + ε, con ε ~ Gumbel(0, sigma_epsilon)
 Uso: python predecir_semana_futura.py --parametros_csv chart_con_parametros.csv
 """
 
@@ -56,7 +57,8 @@ def compute_V(tau_max: int, tau_c: float, A: float, p0: float, t0: float) -> flo
 def predecir_semana_futura(fila_params, semanas_actual, 
                            sigma_epsilon=0.5, n_simulaciones=5000):
     """
-    Predice λ para la semana siguiente (t+1)
+    Predice ω para la semana siguiente (t+1)
+    Modelo: ω = V + ε, con ε ~ Gumbel(0, sigma_epsilon)
     
     Parámetros:
     - fila_params: Serie/row con columnas A, p0, t0, tau_c
@@ -67,7 +69,7 @@ def predecir_semana_futura(fila_params, semanas_actual,
     A = float(fila_params['A'])
     p0 = float(fila_params['p0'])
     t0 = float(fila_params['t0'])
-    tau_c = float(fila_params['tau_c'])  # ← USAR tau_c DIRECTAMENTE
+    tau_c = float(fila_params['tau_c'])
     
     print(f"   τ_c = {tau_c:.4f}")
     
@@ -81,20 +83,19 @@ def predecir_semana_futura(fila_params, semanas_actual,
     if V_futuro <= 0 or np.isinf(V_futuro):
         return None
     
-    # Simular error Gumbel: log(λ) = log(V) + ε
-    log_V_futuro = np.log(V_futuro + 1e-10)
+    # ✅ CORRECTO: ω = V + ε (sin logaritmos ni exponenciales)
     errores = gumbel_r.rvs(loc=0, scale=sigma_epsilon, size=n_simulaciones)
-    lambda_sim = np.exp(log_V_futuro + errores)
+    omega_sim = V_futuro + errores
     
     return {
         'V_actual': V_actual,
         'V_tendencia_futura': V_futuro,
         'tau_c': tau_c,
-        'lambda_media': np.mean(lambda_sim),
-        'lambda_mediana': np.median(lambda_sim),
-        'lambda_p5': np.percentile(lambda_sim, 5),
-        'lambda_p95': np.percentile(lambda_sim, 95),
-        'prob_crecimiento': np.mean(lambda_sim > V_futuro),
+        'omega_media': np.mean(omega_sim),
+        'omega_mediana': np.median(omega_sim),
+        'omega_p5': np.percentile(omega_sim, 5),
+        'omega_p95': np.percentile(omega_sim, 95),
+        'prob_crecimiento': np.mean(omega_sim > V_futuro),
     }
 
 
@@ -153,13 +154,13 @@ def main_predecir():
                 'tau_c': pred['tau_c'],
                 'V_actual': pred['V_actual'],
                 'V_tendencia_futura': pred['V_tendencia_futura'],
-                'lambda_pred_medio': pred['lambda_media'],
-                'lambda_pred_mediana': pred['lambda_mediana'],
-                'lambda_ic90_inf': pred['lambda_p5'],
-                'lambda_ic90_sup': pred['lambda_p95'],
+                'omega_pred_medio': pred['omega_media'],
+                'omega_pred_mediana': pred['omega_mediana'],
+                'omega_ic90_inf': pred['omega_p5'],
+                'omega_ic90_sup': pred['omega_p95'],
                 'prob_crecimiento': pred['prob_crecimiento'],
             })
-            print(f"   ✅ λ medio = {pred['lambda_media']:.2f}")
+            print(f"   ✅ ω medio = {pred['omega_media']:.2f}")
             print(f"   📈 Prob. crecimiento = {pred['prob_crecimiento']:.1%}")
         else:
             print(f"   ❌ Predicción fallida (V futuro inválido)")
@@ -182,7 +183,7 @@ def main_predecir():
             print(f"\n#{r['rank']:3d} | {r['song'][:30]:30s} | {r['artist'][:20]:20s}")
             print(f"     τ_c = {r['tau_c']:.4f}")
             print(f"     V(t) actual = {r['V_actual']:.2f} → V(t+1) tendencia = {r['V_tendencia_futura']:.2f}")
-            print(f"     λ esperado: {r['lambda_pred_medio']:8.2f} (IC90%: {r['lambda_ic90_inf']:6.2f}-{r['lambda_ic90_sup']:6.2f})")
+            print(f"     ω esperado: {r['omega_pred_medio']:8.2f} (IC90%: {r['omega_ic90_inf']:6.2f}-{r['omega_ic90_sup']:6.2f})")
             print(f"     Probabilidad de superar tendencia: {r['prob_crecimiento']:.1%}")
         
         # Estadísticas
@@ -190,7 +191,7 @@ def main_predecir():
         print("📊 ESTADÍSTICAS GLOBALES")
         print(f"{'='*60}")
         print(f"Canciones predichas: {len(df_resultados)}")
-        print(f"Rango λ medio: [{df_resultados['lambda_pred_medio'].min():.2f}, {df_resultados['lambda_pred_medio'].max():.2f}]")
+        print(f"Rango ω medio: [{df_resultados['omega_pred_medio'].min():.2f}, {df_resultados['omega_pred_medio'].max():.2f}]")
         print(f"Prob. crecimiento promedio: {df_resultados['prob_crecimiento'].mean():.1%}")
     else:
         print("\n❌ No se generaron predicciones")
