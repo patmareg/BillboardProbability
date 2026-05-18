@@ -174,10 +174,12 @@ def build_song_args_mc(df):
         x2 = float(grp["x2"].iloc[0])
         x3 = float(grp["x3"].iloc[0])
 
-        t_rels = np.array(
-            [(pd.Timestamp(f) - debut_ts).days // 7 for f in fechas],
-            dtype=np.int32,
-        )
+        # t_rels = np.array(
+        #     [(pd.Timestamp(f) - debut_ts).days // 7 for f in fechas],
+        #     dtype=np.int32,
+        # )
+
+        t_rels = np.arange(len(grp), dtype=np.int32)
 
         # Objetivo: V(t) ≈ 1/ranking  (Zipf)
         y_obs   = 1.0 / rankings.astype(float)
@@ -352,6 +354,58 @@ def plot_multiples(params_df, df, n=6, criterio="mse", guardar=None):
         plt.show()
     plt.close()
 
+def plot_cancion2(params_df, df, titulo, artista, guardar=None):
+    """Grafica V(t) estimada para una canción concreta y el ranking encima."""
+    mask = (params_df["titulo"] == titulo) & (params_df["artista"] == artista)
+    if not mask.any():
+        print(f"No encontrada: '{titulo}' — '{artista}'")
+        print("Muestra de títulos disponibles:")
+        print(params_df["titulo"].sample(min(10, len(params_df))).tolist())
+        return
+
+    row = params_df[mask].iloc[0]
+    grp = df[
+        (df["titulo"] == titulo) & (df["artista"] == artista)
+    ].sort_values("fecha_chart")
+
+    debut_ts = pd.Timestamp(grp["fecha_debut"].iloc[0])
+    # t_rels   = np.array(
+    #     [(pd.Timestamp(f) - debut_ts).days // 7 for f in grp["fecha_chart"].values],
+    #     dtype=np.int32,
+    # )
+    t_rels = np.arange(len(grp), dtype=np.int32)
+    rankings = grp["ranking"].values.astype(int)
+    y_obs    = 1.0 / rankings.astype(float)
+
+    T     = int(t_rels.max())
+    V_all = compute_V_vec(T, row["A"], row["p0"], row["t0"], row["tau_c"])
+    t_all = np.arange(T + 1)
+
+    fig = plt.figure(figsize=(10,8))
+    ax = fig.add_subplot(111)
+    plt.plot(t_rels, y_obs, "o",  color="steelblue", label="1/ranking obs.", zorder=3)
+    plt.plot(t_all,  V_all, "-",  color="tomato",    label="V(t) estimada", linewidth=2)
+    plt.title(f"{titulo}  —  {artista}", fontsize=13, fontweight="bold")
+    plt.xlabel("Semanas desde debut")
+    plt.ylabel("Popularidad (1/ranking)")
+    # plt.title("Ajuste del modelo")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+
+    txt = (f"A={row['A']:.3f}  p0={row['p0']:.3f}\n"
+           f"t0={row['t0']:.2f}  τc={row['tau_c']:.2f}\n"
+           f"MSE={row['mse']:.2e}  n={row['n_semanas']} sem.")
+    ax.text(0.98, 0.97, txt,transform=fig.transFigure,
+                 fontsize=8, va="top", ha="right",
+                 bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
+
+    plt.tight_layout()
+    if guardar:
+        plt.savefig(guardar, dpi=150)
+        print(f"Gráfica guardada en {guardar}")
+    else:
+        plt.show()
+    plt.close()
 
 # ═════════════════════════════════════════════════════════════════
 # 7. MAIN
@@ -397,7 +451,7 @@ def main():
         matplotlib.use("TkAgg")
 
         if args.plot:
-            plot_cancion(params_df, df, args.plot[0], args.plot[1], guardar=args.guardar)
+            plot_cancion2(params_df, df, args.plot[0], args.plot[1], guardar=args.guardar)
         if args.plot_top:
             plot_multiples(params_df, df, criterio="mse",      guardar=args.guardar)
         if args.plot_peor:
@@ -408,6 +462,10 @@ def main():
     print(f"  Filas     : {len(df)}")
     print(f"  Semanas   : {df['fecha_chart'].nunique()}")
     print(f"  Canciones : {df.groupby(['titulo','artista']).ngroups}")
+
+    print(f"\n  x1 : {df['x1'].mean():.4e}, {df['x1'].std():.4e}")
+    print(f"\n  x2 : {df['x2'].mean():.4e}, {df['x2'].std():.4e}")
+    print(f"\n  x3 : {df['x3'].mean():.4e}, {df['x3'].std():.4e}")
 
     print("\nPreparando argumentos...")
     song_args = build_song_args_mc(df)
@@ -453,6 +511,11 @@ def main():
     sigma_out = args.output.replace(".parquet", "_Sigma.parquet")
     pd.DataFrame({"parametro": col_names, "eta": eta}).to_parquet(eta_out, index=False)
     pd.DataFrame(Sigma, index=col_names, columns=col_names).to_parquet(sigma_out)
+
+    eta_r = pd.read_parquet('resultados_eta.parquet')
+    sigma_r = pd.read_parquet('resultados_Sigma.parquet')
+    print(eta)
+    print(Sigma)
 
     print(f"\n─── Archivos generados ─────────────────────────────────────")
     print(f"  params = pd.read_parquet('{args.output}')")
